@@ -47,7 +47,9 @@ export async function activate(options) {
   ui.setForceNewTab(options.newTab);
   ui.setQuery(options.query);
   ui.setPrefixCount(options.prefixCount);
-  ui.setActiveUserSearchEngine(userSearchEngines.keywordToEngine[options.keyword]);
+  ui.setActiveUserSearchEngine(
+    userSearchEngines.keywordToEngine[options.keyword],
+  );
   // Use await here for vomnibar_test.js, so that this page doesn't get unloaded while a test is
   // running.
   await ui.update();
@@ -84,7 +86,7 @@ class VomnibarUI {
   setCompleterName(name) {
     this.completerName = name;
     const capitalize = (s) => s[0].toUpperCase() + s.slice(1);
-    const placeholder = (name == "omni") ? "" : capitalize(name);
+    const placeholder = name == "omni" ? "" : capitalize(name);
     this.input.setAttribute("placeholder", placeholder);
     this.reset();
   }
@@ -139,8 +141,8 @@ class VomnibarUI {
     // the suggestion is selected, and revert when it is not. This allows the user to select a
     // suggestion and then continue typing.
     const completion = this.completions[this.selection];
-    const shouldReplaceInputWithSuggestion = this.selection >= 0 &&
-      completion.insertText != null;
+    const shouldReplaceInputWithSuggestion =
+      this.selection >= 0 && completion.insertText != null;
     if (shouldReplaceInputWithSuggestion) {
       if (this.previousInputValue == null) {
         this.previousInputValue = this.input.value;
@@ -164,31 +166,44 @@ class VomnibarUI {
     const key = KeyboardUtils.getKeyChar(event);
     // Handle <Enter> on "keypress", and other events on "keydown". This avoids interence with CJK
     // translation (see #2915 and #2934).
-    if ((event.type === "keypress") && (key !== "enter")) return null;
-    if ((event.type === "keydown") && (key === "enter")) return null;
+    if (event.type === "keypress" && key !== "enter") return null;
+    if (event.type === "keydown" && key === "enter") return null;
     if (KeyboardUtils.isEscape(event)) {
       return "dismiss";
     } else if (
-      (key === "up") ||
-      (event.shiftKey && (event.key === "Tab")) ||
-      (event.ctrlKey && ((key === "k") || (key === "p")))
+      key === "up" ||
+      (event.shiftKey && event.key === "Tab") ||
+      (event.ctrlKey && (key === "k" || key === "p"))
     ) {
       return "up";
-    } else if ((event.key === "Tab") && !event.shiftKey) {
+    } else if (event.key === "Tab" && !event.shiftKey) {
       return "tab";
     } else if (
-      (key === "down") ||
-      (event.ctrlKey && ((key === "j") || (key === "n")))
+      key === "down" ||
+      (event.ctrlKey && (key === "j" || key === "n"))
     ) {
       return "down";
-    } else if (event.ctrlKey && (key === "enter")) {
+    } else if (event.ctrlKey && key === "enter") {
       return "ctrl-enter";
     } else if (event.key === "Enter") {
       return "enter";
-    } else if ((event.key === "Delete") && event.shiftKey && !event.ctrlKey && !event.altKey) {
+    } else if (
+      event.key === "Delete" &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
       return "remove";
     } else if (KeyboardUtils.isBackspace(event)) {
       return "delete";
+    } else if (event.ctrlKey) {
+      // Maybe a quick jump?
+      for (const [index, suggestion] of this.completions.entries()) {
+        if (event.key == suggestion.keycode) {
+          this.selection = index;
+          return "enter";
+        }
+      }
     }
 
     return null;
@@ -204,10 +219,10 @@ class VomnibarUI {
       this.hide();
     } else if (["tab", "down"].includes(action)) {
       if (
-        (action === "tab") &&
-        (this.completerName === "omni") &&
+        action === "tab" &&
+        this.completerName === "omni" &&
         !this.seenTabToOpenCompletionList &&
-        (this.input.value.trim().length === 0)
+        this.input.value.trim().length === 0
       ) {
         this.seenTabToOpenCompletionList = true;
         this.update();
@@ -229,8 +244,9 @@ class VomnibarUI {
     } else if (action === "ctrl-enter") {
       // Populate the vomnibar with the current selection's URL.
       if (
-        !this.isUserSearchEngineActive() && this.completerName != "commands" &&
-        (this.selection >= 0)
+        !this.isUserSearchEngineActive() &&
+        this.completerName != "commands" &&
+        this.selection >= 0
       ) {
         if (this.previousInputValue == null) {
           this.previousInputValue = this.input.value;
@@ -239,7 +255,7 @@ class VomnibarUI {
         this.input.scrollLeft = this.input.scrollWidth;
       }
     } else if (action === "delete") {
-      if (this.isUserSearchEngineActive() && (this.input.selectionEnd === 0)) {
+      if (this.isUserSearchEngineActive() && this.input.selectionEnd === 0) {
         // Normally, with custom search engines, the keyword (e.g. the "w" of "w query terms") is
         // suppressed. If the cursor is at the start of the input, then reinstate the keyword (the
         // "w").
@@ -248,13 +264,16 @@ class VomnibarUI {
         this.input.selectionStart = this.input.selectionEnd = keyword.length;
         this.activeUserSearchEngine = null;
         this.update();
-      } else if (this.seenTabToOpenCompletionList && (this.input.value.trim().length === 0)) {
+      } else if (
+        this.seenTabToOpenCompletionList &&
+        this.input.value.trim().length === 0
+      ) {
         this.seenTabToOpenCompletionList = false;
         this.update();
       } else {
         return; // Do not suppress event.
       }
-    } else if ((action === "remove") && (this.selection >= 0)) {
+    } else if (action === "remove" && this.selection >= 0) {
       const completion = this.completions[this.selection];
       console.log(completion);
     }
@@ -264,7 +283,8 @@ class VomnibarUI {
   }
 
   async handleEnterKey(event) {
-    const isPrimarySearchSuggestion = (c) => c?.isPrimarySuggestion && c?.isCustomSearch;
+    const isPrimarySearchSuggestion = (c) =>
+      c?.isPrimarySuggestion && c?.isCustomSearch;
     let query = this.input.value.trim();
 
     // Note that it's possible that this.completions is empty. This can happen in practice if the
@@ -273,7 +293,11 @@ class VomnibarUI {
     const waitingOnCompletions = this.completions.length == 0;
     const completion = this.completions[this.selection];
 
-    const openInNewTab = this.forceNewTab || event.shiftKey || event.ctrlKey || event.altKey ||
+    const openInNewTab =
+      this.forceNewTab ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
       event.metaKey;
 
     // If the user types something and hits enter without selecting a completion from the list,
@@ -294,7 +318,10 @@ class VomnibarUI {
       // condition where the user hits Enter before the async completions response arrives
       // (waitingOnCompletions).
       if (this.isUserSearchEngineActive()) {
-        query = UrlUtils.createSearchUrl(query, this.activeUserSearchEngine.url);
+        query = UrlUtils.createSearchUrl(
+          query,
+          this.activeUserSearchEngine.url,
+        );
         this.hide(() => this.launchUrl(query, openInNewTab));
         return;
       }
@@ -320,7 +347,7 @@ class VomnibarUI {
               handler: "launchSearchQuery",
               query,
               openInNewTab,
-            })
+            }),
           );
         }
       }
@@ -344,7 +371,9 @@ class VomnibarUI {
   // reinstate any search engine keyword which is currently being suppressed, and strip any prompted
   // text.
   getInputValueAsQuery() {
-    const prefix = this.isUserSearchEngineActive() ? this.activeUserSearchEngine.keyword + " " : "";
+    const prefix = this.isUserSearchEngineActive()
+      ? this.activeUserSearchEngine.keyword + " "
+      : "";
     return prefix + this.input.value;
   }
 
@@ -352,7 +381,10 @@ class VomnibarUI {
     const requestId = Utils.createUniqueId();
     this.lastRequestId = requestId;
     const query = this.getInputValueAsQuery();
-    const queryTerms = query.trim().split(/\s+/).filter((s) => s.length > 0);
+    const queryTerms = query
+      .trim()
+      .split(/\s+/)
+      .filter((s) => s.length > 0);
 
     const results = await chrome.runtime.sendMessage({
       handler: "filterCompletions",
@@ -366,7 +398,9 @@ class VomnibarUI {
     if (this.lastRequestId != requestId) return;
 
     this.completions = results;
-    this.selection = this.completions[0]?.autoSelect ? 0 : this.initialSelectionValue;
+    this.selection = this.completions[0]?.autoSelect
+      ? 0
+      : this.initialSelectionValue;
     this.renderCompletions(this.completions);
     this.selection = Math.min(
       this.completions.length - 1,
@@ -376,7 +410,9 @@ class VomnibarUI {
   }
 
   renderCompletions(completions) {
-    this.completionList.innerHTML = completions.map((c) => `<li>${c.html}</li>`).join("\n");
+    this.completionList.innerHTML = completions
+      .map((c) => `<li>${c.html}</li>`)
+      .join("\n");
     this.completionList.style.display = completions.length > 0 ? "block" : "";
   }
 
@@ -402,7 +438,10 @@ class VomnibarUI {
 
     // For custom search engines, we suppress the leading prefix (e.g. the "w" of "w query terms")
     // within the vomnibar input.
-    if (!this.isUserSearchEngineActive() && this.getUserSearchEngineForQuery() != null) {
+    if (
+      !this.isUserSearchEngineActive() &&
+      this.getUserSearchEngineForQuery() != null
+    ) {
       this.activeUserSearchEngine = this.getUserSearchEngineForQuery();
       const queryTerms = this.input.value.trim().split(/\s+/);
       this.input.value = queryTerms.slice(1).join(" ");
@@ -438,7 +477,10 @@ class VomnibarUI {
 
   openCompletion(completion, openInNewTab) {
     if (completion.description == "tab") {
-      chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: completion.tabId });
+      chrome.runtime.sendMessage({
+        handler: "selectSpecificTab",
+        id: completion.tabId,
+      });
     } else {
       this.launchUrl(completion.url, openInNewTab);
     }
@@ -499,7 +541,8 @@ function init() {
   });
 }
 
-const testEnv = globalThis.window == null ||
+const testEnv =
+  globalThis.window == null ||
   globalThis.window.location.search.includes("dom_tests=true");
 if (!testEnv) {
   document.addEventListener("DOMContentLoaded", async () => {

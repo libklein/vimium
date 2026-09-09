@@ -58,6 +58,7 @@ export class Suggestion {
   // The generated HTML string for showing this suggestion in the Vomnibar.
   html;
   searchUrl;
+  keycode;
 
   constructor(options) {
     Object.seal(this);
@@ -74,7 +75,7 @@ export class Suggestion {
     return this.relevancy;
   }
 
-  generateHtml() {
+  generateHtml(req, indicator) {
     if (this.html) return this.html;
     const relevancyHtml = showRelevancy
       ? `<span class='relevancy'>${this.computeRelevancy()}</span>`
@@ -84,6 +85,13 @@ export class Suggestion {
     if (this.insertText && this.isCustomSearch) {
       this.title = this.insertText;
     }
+
+    let indicatorText = "";
+    if (indicator != null) {
+      this.keycode = indicator;
+      indicatorText = `[${indicator}]`;
+    }
+
     let faviconHtml = "";
     if (this.description === "tab" && !bgUtils.isFirefox()) {
       const faviconUrl = new URL(chrome.runtime.getURL("/_favicon/"));
@@ -105,32 +113,44 @@ export class Suggestion {
       const escapeKeyForHtml = (key) => {
         return key.replace(/</g, "&lt;").replace(/>/g, "&gt;");
       };
-      const keybindings = this.command.keys.map((key) =>
-        `<span class="key-block">
+      const keybindings = this.command.keys
+        .map(
+          (key) =>
+            `<span class="key-block">
           <span class="key">${escapeKeyForHtml(key)}</span>
           <span class="comma">, </span>
-        </span>`
-      ).join("\n");
+        </span>`,
+        )
+        .join("\n");
 
       // Don't show the source label for command suggestions. It's unnecessary because commands are
       // currently never shown alongside other suggestion types.
       this.html = `\
+<span class="indicator">
+${indicatorText}
+</span>
   <div class="top-half">
     <span class="title">${this.highlightQueryTerms(this.title)}</span>${keybindings}${relevancyHtml}
   </div>
 `;
     } else {
       this.html = `\
+<span class="indicator">
+${indicatorText}
+</span>
+<div>
 <div class="top-half">
    <span class="source ${insertTextClass}">${insertTextIndicator}</span><span class="source">${this.description}</span>
    <span class="title">${this.highlightQueryTerms(Utils.escapeHtml(this.title))}</span>
  </div>
  <div class="bottom-half">
-  <span class="source no-insert-text">${insertTextIndicator}</span>${faviconHtml}<span class="url">${
-        this.highlightQueryTerms(Utils.escapeHtml(this.shortenUrl()))
-      }</span>
+  <span class="source no-insert-text">${insertTextIndicator}</span>${faviconHtml}<span class="url">${this.highlightQueryTerms(
+    Utils.escapeHtml(this.shortenUrl()),
+  )}</span>
   ${relevancyHtml}
-</div>\
+</div>
+</div>
+\
 `;
     }
     return this.html;
@@ -197,7 +217,8 @@ export class Suggestion {
     // Replace portions of the string from right to left.
     ranges = ranges.sort((a, b) => b[0] - a[0]);
     for (const [start, end] of ranges) {
-      string = string.substring(0, start) +
+      string =
+        string.substring(0, start) +
         `<span class='match'>${string.substring(start, end)}</span>` +
         string.substring(end);
     }
@@ -263,11 +284,15 @@ Suggestion.stripPatterns = [
   [
     "^https?://www\\.google\\.(com|ca|com\\.au|co\\.uk|ie)/.*[&?]q=",
     "ei gws_rd url ved usg sa usg sig2 bih biw cd aqs ie sourceid es_sm"
-      .split(/\s+/).map((param) => new RegExp(`\&${param}=[^&]+`)),
+      .split(/\s+/)
+      .map((param) => new RegExp(`\&${param}=[^&]+`)),
   ],
 
   // On Google maps, we get a new history entry for every pan and zoom event.
-  ["^https?://www\\.google\\.(com|ca|com\\.au|co\\.uk|ie)/maps/place/.*/@", [new RegExp("/@.*")]],
+  [
+    "^https?://www\\.google\\.(com|ca|com\\.au|co\\.uk|ie)/maps/place/.*/@",
+    [new RegExp("/@.*")],
+  ],
 
   // General replacements; replaces leading and trailing fluff.
   [".", ["^https?://", "\\W+$"].map((re) => new RegExp(re))],
@@ -297,14 +322,19 @@ export class BookmarkCompleter {
     );
     if (queryTerms.length > 0) {
       results = this.bookmarks.filter((bookmark) => {
-        const suggestionTitle = usePathAndTitle ? bookmark.pathAndTitle : bookmark.title;
+        const suggestionTitle = usePathAndTitle
+          ? bookmark.pathAndTitle
+          : bookmark.title;
         if (bookmark.hasJavascriptProtocol == null) {
-          bookmark.hasJavascriptProtocol = UrlUtils.hasJavascriptProtocol(bookmark.url);
+          bookmark.hasJavascriptProtocol = UrlUtils.hasJavascriptProtocol(
+            bookmark.url,
+          );
         }
         if (bookmark.hasJavascriptProtocol && bookmark.shortUrl == null) {
           bookmark.shortUrl = "javascript:...";
         }
-        const suggestionUrl = bookmark.shortUrl != null ? bookmark.shortUrl : bookmark.url;
+        const suggestionUrl =
+          bookmark.shortUrl != null ? bookmark.shortUrl : bookmark.url;
         return ranking.matches(queryTerms, suggestionUrl, suggestionTitle);
       });
     } else {
@@ -334,8 +364,9 @@ export class BookmarkCompleter {
 
     this.bookmarksTreePromise = chrome.bookmarks.getTree();
     const bookmarksTree = await this.bookmarksTreePromise;
-    this.bookmarks = this.traverseBookmarks(bookmarksTree)
-      .filter((b) => b.url != null);
+    this.bookmarks = this.traverseBookmarks(bookmarksTree).filter(
+      (b) => b.url != null,
+    );
     this.bookmarksTreePromise = null;
   }
 
@@ -355,9 +386,10 @@ export class BookmarkCompleter {
     }
     if (
       bookmark.title &&
-      !((parent.pathAndTitle === "") && ignoredTopLevelBookmarks[bookmark.title])
+      !(parent.pathAndTitle === "" && ignoredTopLevelBookmarks[bookmark.title])
     ) {
-      bookmark.pathAndTitle = parent.pathAndTitle + folderSeparator + bookmark.title;
+      bookmark.pathAndTitle =
+        parent.pathAndTitle + folderSeparator + bookmark.title;
     } else {
       bookmark.pathAndTitle = parent.pathAndTitle;
     }
@@ -387,8 +419,9 @@ export class CommandCompleter {
     //    "count=2": ["c2l", "c2k"],
     //    "count=3": ["c3l", "c3k"],
     // }
-    const commandToOptionsToKeys =
-      (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys;
+    const commandToOptionsToKeys = (
+      await chrome.storage.session.get("commandToOptionsToKeys")
+    ).commandToOptionsToKeys;
 
     // Create a RegistryEntry for the default action (no options specified) of a command.
     const createUnboundRegistryEntry = (command) => {
@@ -403,14 +436,18 @@ export class CommandCompleter {
       });
     };
 
-    const matchingCommands = allCommands.filter((c) => ranking.matches(queryTerms, c.desc));
+    const matchingCommands = allCommands.filter((c) =>
+      ranking.matches(queryTerms, c.desc),
+    );
 
     const suggestions = [];
     for (const commandInfo of matchingCommands) {
       const variations = commandToOptionsToKeys[commandInfo.name] || {};
 
       // Whether the default action of the command (no additional options) is bound to a key.
-      const isDefaultBound = Object.keys(variations).some((option) => option.length === 0);
+      const isDefaultBound = Object.keys(variations).some(
+        (option) => option.length === 0,
+      );
 
       // If the default action is not bound, add the entry explicitly to the suggestions.
       // This makes unbound commands accessible from the Vomnibar.
@@ -460,8 +497,9 @@ export class HistoryCompleter {
 
     let results;
     if (queryTerms.length > 0) {
-      results = HistoryCache.history
-        .filter((entry) => ranking.matches(queryTerms, entry.url, entry.title));
+      results = HistoryCache.history.filter((entry) =>
+        ranking.matches(queryTerms, entry.url, entry.title),
+      );
     } else if (seenTabToOpenCompletionList) {
       // The user has typed <Tab> to open the entire history (sorted by recency).
       results = HistoryCache.history;
@@ -510,11 +548,13 @@ export class DomainCompleter {
 
   async filter({ queryTerms, query }) {
     const isMultiWordQuery = /\S\s/.test(query);
-    if ((queryTerms.length === 0) || isMultiWordQuery) return [];
+    if (queryTerms.length === 0 || isMultiWordQuery) return [];
     if (!this.domains) await this.populateDomains();
 
     const firstTerm = queryTerms[0];
-    const domains = Object.keys(this.domains || []).filter((d) => d.includes(firstTerm));
+    const domains = Object.keys(this.domains || []).filter((d) =>
+      d.includes(firstTerm),
+    );
     const domainsAndScores = this.sortDomainsByRelevancy(queryTerms, domains);
     const result = new Suggestion({
       queryTerms,
@@ -530,7 +570,9 @@ export class DomainCompleter {
   sortDomainsByRelevancy(queryTerms, domainCandidates) {
     const results = [];
     for (const domain of domainCandidates) {
-      const recencyScore = ranking.recencyScore(this.domains[domain].entry.lastVisitTime || 0);
+      const recencyScore = ranking.recencyScore(
+        this.domains[domain].entry.lastVisitTime || 0,
+      );
       const wordRelevancy = ranking.wordRelevancy(queryTerms, domain, null);
       const score = (wordRelevancy + Math.max(recencyScore, wordRelevancy)) / 2;
       results.push([domain, score]);
@@ -552,7 +594,8 @@ export class DomainCompleter {
   onVisited(newPage) {
     const domain = this.parseDomainAndScheme(newPage.url);
     if (domain) {
-      const slot = this.domains[domain] ||
+      const slot =
+        this.domains[domain] ||
         (this.domains[domain] = { entry: newPage, referenceCount: 0 });
       // We want each entry in our domains map to point to the most recent History entry for that
       // domain.
@@ -594,7 +637,9 @@ export class TabCompleter {
     await bgUtils.tabRecency.init();
     // We search all tabs, not just those in the current window.
     const tabs = await chrome.tabs.query({});
-    const results = tabs.filter((tab) => ranking.matches(queryTerms, tab.url, tab.title));
+    const results = tabs.filter((tab) =>
+      ranking.matches(queryTerms, tab.url, tab.title),
+    );
     const suggestions = results
       .map((tab) => {
         const suggestion = new Suggestion({
@@ -616,14 +661,18 @@ export class TabCompleter {
     // subjectively chosen on the grounds that they seem to work pretty well.
     suggestions.forEach(function (suggestion, i) {
       suggestion.relevancy *= 8;
-      suggestion.relevancy /= (i / 4) + 1;
+      suggestion.relevancy /= i / 4 + 1;
     });
     return suggestions;
   }
 
   computeRelevancy(suggestion) {
     if (suggestion.queryTerms.length > 0) {
-      return ranking.wordRelevancy(suggestion.queryTerms, suggestion.url, suggestion.title);
+      return ranking.wordRelevancy(
+        suggestion.queryTerms,
+        suggestion.url,
+        suggestion.title,
+      );
     } else {
       return bgUtils.tabRecency.recencyScore(suggestion.tabId);
     }
@@ -664,7 +713,10 @@ export class SearchEngineCompleter {
 
     const searchUrl = userSearchEngine.url;
 
-    const completions = await completionSearch.complete(searchUrl, queryTermsWithoutKeyword);
+    const completions = await completionSearch.complete(
+      searchUrl,
+      queryTermsWithoutKeyword,
+    );
 
     const makeSuggestion = (query) => {
       const url = UrlUtils.createSearchUrl(query, searchUrl);
@@ -691,7 +743,9 @@ export class SearchEngineCompleter {
 
     // This is a suggestion which contains the user's query. It's the "search for exactly what I
     // just typed" option. It should always appear first in the list.
-    const primarySuggestion = makeSuggestion(queryTermsWithoutKeyword.join(" "));
+    const primarySuggestion = makeSuggestion(
+      queryTermsWithoutKeyword.join(" "),
+    );
     primarySuggestion.relevancy = 2;
     primarySuggestion.isPrimarySuggestion = true;
     primarySuggestion.autoSelect = true;
@@ -736,19 +790,22 @@ export class MultiCompleter {
   }
 
   async filter(request) {
-    const searchEngineCompleter = this.completers.find((c) => c instanceof SearchEngineCompleter);
+    const searchEngineCompleter = this.completers.find(
+      (c) => c instanceof SearchEngineCompleter,
+    );
     const query = request.query;
     const queryTerms = request.queryTerms;
 
     // The only UX where we support showing results when there are no query terms is via
     // Vomnibar.activateTabSelection, where we show the list of open tabs by recency.
-    const isTabCompleter = this.completers.length == 1 &&
-      this.completers[0] instanceof TabCompleter;
+    const isTabCompleter =
+      this.completers.length == 1 && this.completers[0] instanceof TabCompleter;
     if (queryTerms.length == 0 && !isTabCompleter) {
       return [];
     }
 
-    const queryMatchesUserSearchEngine = searchEngineCompleter?.getUserSearchEngineForQuery(query);
+    const queryMatchesUserSearchEngine =
+      searchEngineCompleter?.getUserSearchEngineForQuery(query);
 
     // If the user's query matches one of their custom search engines, then use only that engine to
     // provide completions for their query.
@@ -791,8 +848,14 @@ export class MultiCompleter {
     }
 
     // Generate HTML for the remaining suggestions and return them.
-    for (const s of dedupedSuggestions) {
-      s.generateHtml(request);
+    for (const [i, s] of dedupedSuggestions.entries()) {
+      let indicator = i + 1;
+      if (indicator == 10) {
+        indicator = 0;
+      } else if (indicator > 10) {
+        indicator = null;
+      }
+      s.generateHtml(request, indicator);
     }
 
     return dedupedSuggestions;
@@ -852,7 +915,11 @@ export const HistoryCache = {
   onVisited(newPage) {
     // On Firefox, some history entries do not have titles.
     if (newPage.title == null) newPage.title = "";
-    const i = HistoryCache.binarySearch(newPage, this.history, this.compareHistoryByUrl);
+    const i = HistoryCache.binarySearch(
+      newPage,
+      this.history,
+      this.compareHistoryByUrl,
+    );
     const pageWasFound = this.history[i]?.url == newPage.url;
     if (pageWasFound) {
       this.history[i] = newPage;
@@ -867,8 +934,12 @@ export const HistoryCache = {
       this.history = [];
     } else {
       for (const url of toRemove.urls) {
-        const i = HistoryCache.binarySearch({ url }, this.history, this.compareHistoryByUrl);
-        if ((i < this.history.length) && (this.history[i].url === url)) {
+        const i = HistoryCache.binarySearch(
+          { url },
+          this.history,
+          this.compareHistoryByUrl,
+        );
+        if (i < this.history.length && this.history[i].url === url) {
           this.history.splice(i, 1);
         }
       }
@@ -877,7 +948,8 @@ export const HistoryCache = {
 };
 
 HistoryCache._onVisitedListener = HistoryCache.onVisited.bind(HistoryCache);
-HistoryCache._onVisitRemovedListener = HistoryCache.onVisitRemoved.bind(HistoryCache);
+HistoryCache._onVisitRemovedListener =
+  HistoryCache.onVisitRemoved.bind(HistoryCache);
 
 // Returns the matching index or the closest matching index if the element is not found. That means
 // you must check the element at the returned index to know whether the element was actually found.
